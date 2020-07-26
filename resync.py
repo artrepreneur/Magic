@@ -17,9 +17,8 @@ def resync(uname, pwd, progress_callback):
     global err
 
     try:
-        cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet resync"
+        cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet resync"
         print(cmd)
-        exit()
         result, err = (subprocess.Popen(resource_path(cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
         result = result.decode('utf-8')
         err = err.decode('utf-8')

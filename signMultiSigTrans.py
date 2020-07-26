@@ -21,7 +21,7 @@ def create(uname, pwd, raw_trans, passphrase, window):
 
     try:
         # unlock wallet
-        unlock_cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrase " + passphrase + ' 10000'
+        unlock_cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrase " + passphrase + ' 10000'
         result, err = (subprocess.Popen(resource_path(unlock_cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
         result = result.decode('utf-8')
         err = err.decode('utf-8')
@@ -39,7 +39,7 @@ def create(uname, pwd, raw_trans, passphrase, window):
             window.label_66.setText("Error: Wallet could not be unlocked. Check your wallet passphrase.")
 
         else:
-            decode_cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" decoderawtransaction " + raw_trans
+            decode_cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" decoderawtransaction " + raw_trans
             print('decode command', decode_cmd)
             result, err = (subprocess.Popen(resource_path(decode_cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
             result = result.decode('utf-8')
@@ -55,7 +55,7 @@ def create(uname, pwd, raw_trans, passphrase, window):
                 txid = (json_trans)['vin'][0]["txid"]
                 vout = (json_trans)['vin'][0]["vout"]
                 print('txid', txid, 'vout', vout)
-                sender_cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" getrawtransaction " + txid
+                sender_cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" getrawtransaction " + txid
                 print(sender_cmd)
                 sndr_result, sndr_err = (subprocess.Popen(resource_path(sender_cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
                 sndr_result = sndr_result.decode('utf-8')
@@ -63,7 +63,7 @@ def create(uname, pwd, raw_trans, passphrase, window):
                 print('sender res', sndr_result, sndr_err) 
 
                 if not sndr_err:
-                    decode_cmd_2 = "bin/btcctl -u "+  uname +" -P "+ pwd +" decoderawtransaction " + sndr_result
+                    decode_cmd_2 = "bin/pktctl -u "+  uname +" -P "+ pwd +" decoderawtransaction " + sndr_result
                     result_2, err_2 = (subprocess.Popen(resource_path(decode_cmd_2), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
                     result_2 = result_2.decode('utf-8')
                     err_2 = err_2.decode('utf-8')
@@ -96,44 +96,44 @@ def create(uname, pwd, raw_trans, passphrase, window):
 
                         if ret == QtWidgets.QMessageBox.Yes:
 
-                            try:
-                                # Try to open if it exists.
-                                with open('MultisigData/mdata.json', 'r') as infile:
-                                    json_data = json.load(infile)
-                                json_arr = json_data["addr_data"]
+                            #try:
+                            # Try to open if it exists.
+                            with open('MultisigData/mdata.json', 'r') as infile:
+                                json_data = json.load(infile)
+                            json_arr = json_data["addr_data"]
 
-                                # import redeemScript and PK's
-                                for data in json_arr:
-                                    if data["multisigAddress"] == sender_addr:
-                                        redeem_script = data["redeemScript"]
-                                        success = True
-                                        break
-                            
+                            # import redeemScript and PK's
+                            for data in json_arr:
+                                if data["multisigAddress"] == sender_addr:
+                                    redeem_script = data["redeemScript"]
+                                    success = True
+                                    break
+                        
 
-                                sign_cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet signrawtransaction " + str(raw_trans) + " '[{\"txid\":\""+str(txid)+"\",\"n\":\""+str(vout)+"\",\"scriptpubkey\":\""+str(scriptpubkey)+"\",\"redeemscript\":\""+str(redeem_script)+"\"}]'"
-                                print(sign_cmd)
+                            sign_cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet signrawtransaction " + str(raw_trans) + " '[{\"txid\":\""+str(txid)+"\",\"n\":\""+str(vout)+"\",\"scriptpubkey\":\""+str(scriptpubkey)+"\",\"redeemscript\":\""+str(redeem_script)+"\"}]'"
+                            print(sign_cmd)
 
-                                sign_result, err_3 = (subprocess.Popen(resource_path(sign_cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
-                                sign_result = sign_result.decode('utf-8')
-                                err_3 = err_3.decode('utf-8')
-                                signed_trans = str(json.loads(sign_result)['hex'])
-                                print(signed_trans)
+                            sign_result, err_3 = (subprocess.Popen(resource_path(sign_cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
+                            sign_result = sign_result.decode('utf-8')
+                            err_3 = err_3.decode('utf-8')
+                            signed_trans = str(json.loads(sign_result)['hex'])
+                            print(signed_trans)
 
-                                # Relock wallet.
-                                lock = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet walletlock"
-                                result_lock, err_lock = subprocess.Popen(resource_path(lock), shell=True, stdout=subprocess.PIPE).communicate()
+                            # Relock wallet.
+                            lock = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletlock"
+                            result_lock, err_lock = subprocess.Popen(resource_path(lock), shell=True, stdout=subprocess.PIPE).communicate()
 
-                                if err_3:
-                                    print('Error:', err_3)
-                                    window.label_66.setText("Error: Could not create transaction. Try again.")
-                                    return "Error: Could not sign transaction. Try again. " + err_3
+                            if err_3:
+                                print('Error:', err_3)
+                                window.label_66.setText("Error: Could not create transaction. Try again.")
+                                return "Error: Could not sign transaction. Try again. " + err_3
 
-                                else:
-                                    return signed_trans    
+                            else:
+                                return signed_trans    
 
-                            except:
-                                print("no mdata.json file.")
-                                return "Error: Could not sign transaction." 
+                            #except:
+                            #    print("No mdata.json file present.")
+                            #    return "Error: Could not sign transaction." 
 
                         elif ret == QtWidgets.QMessageBox.Cancel:
                             return

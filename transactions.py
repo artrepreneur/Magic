@@ -1,7 +1,6 @@
 # Copyright (c) 2020 Vishnu J. Seesahai
 # Use of this source code is governed by an MIT
 # license that can be found in the LICENSE file.
-
 import subprocess, os, sys, json, threading, signal, traceback, rpcworker
 from PyQt5.QtCore import *
 from PyQt5.QtGui import *
@@ -9,8 +8,6 @@ from PyQt5 import QtWidgets
 from datetime import datetime
 from rpcworker import progress_fn, thread_complete
 _translate = QCoreApplication.translate
-#from resource import resource_path
-#from pixMp import *
 
 def resource_path(relative_path):
     #dir = QDir.currentPath()
@@ -20,12 +17,13 @@ def resource_path(relative_path):
 
 def get_history(uname, pwd, progress_callback):
     global err, count, state
-    count = 100
+    count = 200
     state = int(page) * (count -1)
 
     try:
-        result, err = subprocess.Popen([resource_path('bin/btcctl'), '-u', uname, '-P', pwd, '--wallet', 'listtransactions', str(count), str(state)], shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
-        print('result:', result)
+        result, err = subprocess.Popen([resource_path('bin/pktctl'), '-u', uname, '-P', pwd, '--wallet', 'listtransactions', str(count), str(state)], shell=False, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        #print('result:', result)
+
         if result:
             result = json.loads(result)
         err = err.decode('utf-8')
@@ -48,6 +46,10 @@ def history(u, p, pg, win, state, pool):
     # Pass the function to execute
     if not worker_state_active['TRANS']:
         worker_state_active['TRANS'] = True
+        window.trns_status.setStyleSheet("QLabel {font: 16pt Bold Italic 'Gill Sans';}")
+        window.trns_status.setText('Loading...')
+        window.trns_status.show()
+        window.load_trns_btn.setEnabled(False)
         worker = rpcworker.Worker(get_history, uname, pwd)
         worker.signals.result.connect(print_result)
         worker.signals.finished.connect(thread_complete)
@@ -65,37 +67,34 @@ def row_count(iterator):
             else:
                 count += 1
             iterator += 1
-        if item.text(0).strip()=='Loading...' :
+        print('item.text(0).strip()',item.text(0).strip())    
+        if item.text(0).strip()=='':
             count = 0
             window.transaction_hist_tree.clear()
-    #print('count', count)        
     return count
 
 def print_result(result):
-    print('result', result)
+    print('result:', result)
     if result:
         iterator = QtWidgets.QTreeWidgetItemIterator(window.transaction_hist_tree)
         count = row_count(iterator)
-
         for i, item in enumerate(result):
                 index = (count) + i
-                #print(i, index, item)
+                print(i, index, item)
                 time = item["time"]
                 ts = str(datetime.utcfromtimestamp(time).strftime('%Y-%m-%d %H:%M:%S'))
                 address = item["address"]
                 amount = str(round(item["amount"],8)) + ' PKT'
                 trans_id = item["txid"]
-
                 item_0 = QtWidgets.QTreeWidgetItem(window.transaction_hist_tree)
                 font = QFont()
-                font.setFamily("Helvetica")
+                font.setFamily("Gill Sans")
                 font.setPointSize(15)
                 item_0.setFont(0, font)
                 item_0.setFont(1, font)
                 item_0.setFont(2, font)
                 item_0.setFont(3, font)
-                #print(ts, address, amount, trans_id)
-                window.transaction_hist_tree.setStyleSheet("QTreeView::item { padding: 5px }")
+                window.transaction_hist_tree.setStyleSheet("QTreeView::item { padding: 5px; background-color: rgb(201, 207, 207)}")
                 window.transaction_hist_tree.topLevelItem(index).setText(0, _translate("MainWindow", ts))
                 window.transaction_hist_tree.topLevelItem(index).setText(1, _translate("MainWindow", address))
                 window.transaction_hist_tree.topLevelItem(index).setText(2, _translate("MainWindow", amount))
@@ -104,5 +103,7 @@ def print_result(result):
     else:
         item_0 = QtWidgets.QTreeWidgetItem(window.transaction_hist_tree)
         window.transaction_hist_tree.topLevelItem(0).setText(0, _translate("MainWindow", "No transactions found."))
-
     worker_state_active['TRANS'] = False
+    window.load_trns_btn.setEnabled(True)
+    window.trns_status.setText('Transactions Loaded')
+    window.trns_status.hide()

@@ -27,7 +27,7 @@ def execute2(u, p, a, pp, pd, win, state):
     window.label_6.clear()
 
     try:
-        cmd = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrase " + passphrase + ' 1000'
+        cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrase " + passphrase + ' 1000'
         result, err = (subprocess.Popen(resource_path(cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
         result = result.decode('utf-8')
         err = err.decode('utf-8')
@@ -35,21 +35,19 @@ def execute2(u, p, a, pp, pd, win, state):
         if not err:
             amount = 0
             payments = ''
+           
 
             for i, item in enumerate(pay_dict):
                 item = str(item)
-                #payments += '"' + item + '":' + str(pay_dict[item])
                 payments += item + ' ' + str(pay_dict[item])
                 amount += float(pay_dict[item])
                 if not len(pay_dict) == (i + 1):
                     payments +=', '
 
-            #addresses = " '{" + payments + "}' '[" + '"' + address + '"' + "]'"
-            addresses = " " + payments + " '[" + '"' + address + '"' + "]'"
+            cmd = " " + payments + " '[" + '"' + address + '"' + "]'"
              
-            try:
-                
-                    cmd_2 = "bin/btcctl -u "+  uname +" -P "+ pwd +" --wallet sendfrom" + addresses + " 1"
+            try:     
+                    cmd_2 = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet sendfrom" + cmd + " 1"
                     print(cmd_2)
                     result_2, err_2 = subprocess.Popen(resource_path(cmd_2), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
                     result_2 = result_2.decode('utf-8')
@@ -57,7 +55,48 @@ def execute2(u, p, a, pp, pd, win, state):
                     print(result_2, err_2)
 
                     if not err_2:
-                        print_result(result_2)
+                        print('Transaction ID:', result_2)
+                        window.lineEdit_7.clear()
+   
+                        # Relock wallet.
+                        lock = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletlock"
+                        subprocess.Popen(resource_path(lock), shell=True, stdout=subprocess.PIPE).communicate()
+                        window.lineEdit_7.setText(result_2)
+
+                        try:
+                            cmd_3 = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet gettransaction " + result_2 + " true"
+                            result_3, err_3 = subprocess.Popen(resource_path(cmd_3), shell=True, stdout=subprocess.PIPE).communicate()
+                            
+                            if not err_3:
+                                hex = json.loads(result_3)["hex"]
+                                fee = str(format(round(float(json.loads(result_3)["fee"]), 8), '.8f'))
+                                details = json.loads(result_3)["details"]
+                                deet = ''
+                                print('Transaction details:', details)
+                                
+                                '''
+                                for item in details:
+                                    if (item["category"] == "receive"):
+                                        addr = item["address"]
+                                        amount = str(format(round(float(item["amount"]), 8), '.8f'))
+                                        deet += 'You sent address: ' + addr + '\nthe amount: ' + amount + ' PKT\n\n'
+                                '''
+                                for i, item in enumerate(pay_dict):
+                                    deet += 'You sent address: ' + str(item) + '\nthe amount: ' + str(pay_dict[item]) + ' PKT\n\n'         
+                                 
+                                deet += 'Your fees were: ' + fee + ' PKT'
+                                window.textEdit_4.setText(deet.strip())
+                                window.stackedWidget.setCurrentIndex(window.stackedWidget.indexOf(window.sent_page))
+
+                            
+
+                            else:
+                                print('Error:', err_3)
+                                window.textEdit_4.setText(_translate("MainWindow","Could not get transaction details."))
+
+                        except subprocess.CalledProcessError as e:
+                            print('Error:', e.output)
+
                     else:
                         print('Error:', err_2)
                         if "waddrmgr.scriptAddress" in err_2:
@@ -68,6 +107,8 @@ def execute2(u, p, a, pp, pd, win, state):
                             window.label_6.setText(_translate("MainWindow","Insufficient fees error."))
                         elif "ErrOrphanTransactionDisallowed" in err_2:
                             window.label_6.setText(_translate("MainWindow","This transaction references and orphan output, try to resync."))
+                        elif "TooManyInputsError:" in err_2:
+                            window.label_6.setText(_translate("MainWindow","To complete this transaction you will need to fold all balances from this address."))
                         else:
                             window.label_6.setText(_translate("MainWindow","Unable to submit transaction. Make sure all payees have a valid address and amount."))
 
