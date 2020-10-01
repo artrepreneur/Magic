@@ -1,0 +1,15 @@
+"maxfee_kb": 8700000000,
+"minfee_kb": 100000,
+"dust_limit": 2940,
+"blockbook": [
+    "https://nmc1.trezor.io",
+    "https://nmc2.trezor.io"
+  ],
+
+
+
+
+
+
+ "min_address_length": 27,
+  "max_address_length": 34,

@@ -2,6 +2,7 @@
 # Use of this source code is governed by an MIT
 # license that can be found in the LICENSE file.
 
+
 from PyQt5 import QtWidgets, uic
 from MainWindow import Ui_MainWindow
 from PyQt5.QtCore import *
@@ -32,6 +33,7 @@ WALLET_NAME = "wallet.db"
 WALLET_NAME_E = "wallet.db.gpg"
 MAGIC_WALLET = False
 WALLET_COPY = False
+ssh = None
 # !!
 
 WAIT_SECONDS = 10
@@ -45,6 +47,21 @@ COUNTER = 1
 FEE = ".00000001"
 STATUS_INTERVAL = 10
 passphrase = ''
+passphrase_ok = False
+
+# Password visiblity toggle
+password_shown = False
+ver_password_shown = False
+old_password_shown = False
+new_password_shown = False
+v_password_shown = False
+pwd_action = None
+ver_pwd_action = None
+pwd_vsbl_icon = None
+pwd_invsbl_icon = None
+pwd_old_action = None
+pwd_new_action = None
+pwd_ver_action = None
 
 def resource_path(relative_path):
     if hasattr(sys, '_MEIPASS'):
@@ -152,7 +169,7 @@ class SendRcp(QtWidgets.QFrame):
     def del_clicked(self):
 
         self.lineEdit_6.clear()
-        self.send_amt_input.clear()
+        self.send_amt_input.clear() #sdfsd
 
         class_id = self.name.split('_')[0]
         chld_num = window.rcp_list.count() if (class_id == 'send') else window.rcp_list_2.count()
@@ -277,7 +294,11 @@ def side_menu_clicked(btn):
     elif btn.objectName().strip() == 'Magic':
         print("Detecting magic wallet...\n")
         dct_msg_box = QtWidgets.QMessageBox()
-        dct_msg_box.setText("Attempting to connect to you magic wallet")
+        dct_msg_box.setText("Attach your magic wallet and click \"Connect\" to connect it.\n")
+        dct_msg_box.setInformativeText("If your wallet is attached to your computer, you may need to wait a minute and click the magic button again to connect to it.\n")
+        dct_msg_box.setStandardButtons(QtWidgets.QMessageBox.Ok)
+        dct_msg_btn = dct_msg_box.button(QtWidgets.QMessageBox.Ok)
+        dct_msg_btn.setText("Connect")
         dct_msg_box.exec()
         detect_magic_wllt(QtWidgets)    
 
@@ -363,14 +384,58 @@ def get_pub_key(address):
     # Get private key
     pubkey.get_key(uname, pwd, address, window, worker_state_active, threadpool)
 
+# !!
 def change_pass(old_pass, new_pass):
+
     # Attempt to change password.
-    password.change(uname, pwd, old_pass, new_pass, window, worker_state_active, threadpool)
+    global passphrase
+    passphrase = ""
+    success = False
+
+    if path.exists(get_correct_path(".magic.cfg")):
+
+        if not (MAGIC_WALLET and CONNECTED and ssh):
+
+            # Ask user to attach and connect to wallet before attempting to change password
+            pwd_chg_msg_box = QtWidgets.QMessageBox()
+            pwd_chg_msg = 'It seems you own a magic wallet. Make sure it\'s attached and click the "Magic" button connect it.'
+            pwd_chg_msg_box.setText(pwd_chg_msg)            
+            pwd_chg_msg_box.exec()
+
+        else:
+            if not (old_pass == new_pass):
+                print("About to change local password... \n")
+                password.change(uname, pwd, old_pass, new_pass, window, worker_state_active, threadpool, True)
+                print("Changed wallet password... \n")
+            
+            res = change_mgk_passphrase(new_pass, ssh)
+            
+            if res:
+                print("Changed magic password... \n")
+                passphrase = new_pass
+                success = True
+
+    else:
+        password.change(uname, pwd, old_pass, new_pass, window, worker_state_active, threadpool, False)
+        passphrase = new_pass
+        success = True
+
+    return success    
 
 # Additional customizations
 def add_custom_styles():
+    global pwd_action, ver_pwd_action, pwd_vsbl_icon, pwd_invsbl_icon, pwd_old_action, pwd_new_action, pwd_ver_action
 
     window.label_25.setPixmap(QPixmap(resource_path('img/app_icon.png')))
+ 
+    # Password visiblity toggle
+    pwd_vsbl_icon = QIcon(QPixmap(resource_path('img/glyphicons_051_eye_open.png')))
+    pwd_invsbl_icon = QIcon(QPixmap(resource_path('img/glyphicons_052_eye_close.png')))
+    pwd_action = window.lineEdit_2.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
+    ver_pwd_action = window.lineEdit_11.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
+    pwd_old_action = window.lineEdit_10.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
+    pwd_new_action = window.lineEdit_4.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
+    pwd_ver_action = window.lineEdit_5.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
 
     # Frame customizations
     window.send_exec_group.setStyleSheet("QGroupBox#send_exec_group {border-radius: 5px; background-color: rgb(228, 234, 235);}")
@@ -508,6 +573,7 @@ def add_custom_styles():
     window.recalc_btn.setFixedSize(100, 25)
 
 
+
 # Listen for static buttons
 def button_listeners():
     window.snd_btn.clicked.connect(btn_released)
@@ -549,6 +615,7 @@ def button_listeners():
     window.no_seed_next_btn.clicked.connect(btn_released)
     window.open_wllt_btn.clicked.connect(btn_released)
     window.recalc_btn.clicked.connect(btn_released)
+    
 
 
 # Menu listeners
@@ -575,6 +642,191 @@ def menubar_listeners():
     window.actionWebsite.triggered.connect(menubar_released)
     window.actionManual_Resync.triggered.connect(menubar_released)
     app.aboutToQuit.connect(quit_app)
+    pwd_action.triggered.connect(on_toggle_password_action)
+    ver_pwd_action.triggered.connect(on_toggle_ver_password_action)
+    pwd_old_action.triggered.connect(on_toggle_old_password_action)
+    pwd_new_action.triggered.connect(on_toggle_new_password_action)
+    pwd_ver_action.triggered.connect(on_toggle_v_password_action)
+
+
+def on_toggle_password_action(self):
+    global password_shown
+
+    if not password_shown:
+        window.lineEdit_2.setEchoMode(QtWidgets.QLineEdit.Normal)
+        password_shown = True
+        pwd_action.setIcon(pwd_invsbl_icon)
+    else:
+        window.lineEdit_2.setEchoMode(QtWidgets.QLineEdit.Password)
+        password_shown = False
+        pwd_action.setIcon(pwd_vsbl_icon)
+
+def on_toggle_ver_password_action(self):
+    global ver_password_shown
+    
+    if not ver_password_shown:
+        window.lineEdit_11.setEchoMode(QtWidgets.QLineEdit.Normal)
+        ver_password_shown = True
+        ver_pwd_action.setIcon(pwd_invsbl_icon)
+    else:
+        window.lineEdit_11.setEchoMode(QtWidgets.QLineEdit.Password)
+        ver_password_shown = False
+        ver_pwd_action.setIcon(pwd_vsbl_icon)
+
+def on_toggle_old_password_action(self):
+    global old_password_shown
+    
+    if not old_password_shown:
+        window.lineEdit_10.setEchoMode(QtWidgets.QLineEdit.Normal)
+        old_password_shown = True
+        pwd_old_action.setIcon(pwd_invsbl_icon)
+    else:
+        window.lineEdit_10.setEchoMode(QtWidgets.QLineEdit.Password)
+        old_password_shown = False
+        pwd_old_action.setIcon(pwd_vsbl_icon)
+
+def on_toggle_new_password_action(self):
+    global new_password_shown
+    print("toggle new", new_password_shown)
+    if not new_password_shown:
+        window.lineEdit_4.setEchoMode(QtWidgets.QLineEdit.Normal)
+        new_password_shown = True
+        pwd_new_action.setIcon(pwd_invsbl_icon)
+    else:
+        window.lineEdit_4.setEchoMode(QtWidgets.QLineEdit.Password)
+        new_password_shown = False
+        pwd_new_action.setIcon(pwd_vsbl_icon)
+
+def on_toggle_v_password_action(self):
+    global v_password_shown
+    
+    if not v_password_shown:
+        window.lineEdit_5.setEchoMode(QtWidgets.QLineEdit.Normal)
+        v_password_shown = True
+        pwd_ver_action.setIcon(pwd_invsbl_icon)
+    else:
+        window.lineEdit_5.setEchoMode(QtWidgets.QLineEdit.Password)
+        v_password_shown = False
+        pwd_ver_action.setIcon(pwd_vsbl_icon)
+
+class CustomInputDialog(QtWidgets.QDialog):
+    def __init__(self, *args, **kwargs):
+        super(CustomInputDialog, self).__init__(*args, **kwargs)
+        
+        self.pass_shown = False 
+        self.passphrase = None
+        self.type = type
+        self.label = QtWidgets.QLabel(self)
+        
+        '''
+        if SHUTDOWN_CYCLE:
+            self.label.setText("Backing up your wallet...\n\nPlease enter your wallet passphrase:")
+        else:
+            self.label.setText("Please enter your wallet passphrase:")
+        '''
+        
+        self.label.setText("Please enter your wallet passphrase:")    
+        self.label.setStyleSheet("font: 14pt Bold 'Gill Sans'")
+        self.setWindowTitle("Wallet Passphrase")
+        
+        self.line = QtWidgets.QLineEdit(self)
+        self.line_action = self.line.addAction(pwd_vsbl_icon, QtWidgets.QLineEdit.TrailingPosition)
+        self.line.setEchoMode(QtWidgets.QLineEdit.Password)
+        self.line.setFixedWidth(200)
+        
+        self.cncl_btn = QtWidgets.QPushButton(self)
+        self.cncl_btn.setObjectName("cncl_btn")
+        self.cncl_btn.setText("Cancel")
+        self.cncl_btn.setFixedWidth(80)
+        
+        self.ok_btn = QtWidgets.QPushButton(self)
+        self.ok_btn.setObjectName("ok_btn")
+        self.ok_btn.setText("Ok")
+        self.ok_btn.setDefault(True)
+        self.ok_btn.setFixedWidth(80)
+        
+        self.form_layout = QtWidgets.QGridLayout(self)
+        self.form_layout.addWidget(self.label, 0, 0, 1, 1)
+        self.form_layout.addWidget(self.line, 1, 0, 1, 1)
+        
+        self.frame = QtWidgets.QFrame(self)
+        self.sub_form_layout  = QtWidgets.QGridLayout(self.frame)
+        self.sub_form_layout.addWidget(self.cncl_btn, 0, 0, 1, 1)
+        self.sub_form_layout.addWidget(self.ok_btn, 0, 1, 1, 1)
+        self.form_layout.addWidget(self.frame, 2, 0, 1, 1)
+        
+        # Actions
+        self.cncl_btn.clicked.connect(self.cncl_clicked)
+        self.ok_btn.clicked.connect(self.ok_clicked)
+        self.line_action.triggered.connect(self.toggle_clicked)
+					
+    def cncl_clicked(self):
+        self.passphrase = None
+        self.close()
+        
+    def ok_clicked(self):
+        passphrase = self.line.text()
+        self.passphrase = passphrase
+        self.close()
+        
+    def toggle_clicked(self):
+        if not self.pass_shown:
+            self.line.setEchoMode(QtWidgets.QLineEdit.Normal)
+            self.pass_shown = True
+            self.line_action.setIcon(pwd_invsbl_icon)
+        else:
+            self.line.setEchoMode(QtWidgets.QLineEdit.Password)
+            self.pass_shown = False
+            self.line_action.setIcon(pwd_vsbl_icon)
+					
+def get_pass():
+        global passphrase, passphrase_ok
+
+        passphrase = ""
+        ok = passphrase_ok
+        dialog = CustomInputDialog()
+        dialog.exec()
+        passphrase = dialog.passphrase
+
+        if passphrase and not passphrase_ok:
+            # see if passphrase is valid, we are using the same passphrase for the wallet. 
+            try:
+                cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrase " + passphrase + ' 1000'
+                result, err = (subprocess.Popen(resource_path(cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
+                result = result.decode('utf-8')
+                err = err.decode('utf-8')
+                
+                if not err:
+                    ok = True
+                    passphrase_ok = ok
+
+                    try:
+                        lock = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletlock"
+                        result_lock, err_lock = subprocess.Popen(resource_path(lock), shell=True, stdout=subprocess.PIPE).communicate()
+                    except:
+                        print("Wallet lock failed.\n")
+                else:
+                    passphrase = ""
+                    bad_pass()  
+
+            except:
+                print("Passphrase failed.\n")
+                passphrase = ""
+                bad_pass()
+        elif passphrase and passphrase_ok:
+            ok = passphrase_ok
+        else:
+            passphrase = ""
+            ok = False
+            passphrase_ok = ok
+
+        return passphrase, ok
+
+def bad_pass():
+    pwd_msg = "The password you entered is incorrect."
+    pwd_msg_box = QtWidgets.QMessageBox()
+    pwd_msg_box.setText(pwd_msg)
+    pwd_msg_box.exec()  
 
 # Quit app
 def quit_app():
@@ -625,7 +877,7 @@ def btn_released(self):
 
             #Get passphrase
             if passphrase == '':
-                passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+                passphrase, ok = get_pass()
             else:
                 ok = True
 
@@ -724,7 +976,6 @@ def btn_released(self):
     elif clicked_widget.objectName() == 'seed_next_btn':
         pp = wllt_pass
         seed_entry = window.imprt_seed_txt.toPlainText().strip()
-        #print('seed entry:', seed_entry)
         old_pass_line = window.old_pass_line.text().strip()
 
         if not old_pass_line:
@@ -746,10 +997,7 @@ def btn_released(self):
             seed_msg_box = QtWidgets.QMessageBox()
             seed_msg_box.setText('Your wallet could not be created. Verify seed and/or old password.')
             seed_msg_box.exec()
-        #else:
-        #    seed_msg_box = QtWidgets.QMessageBox()
-        #    seed_msg_box.setText('Your seed has an incorrect number of words. Check your seed and try again.')
-        #    seed_msg_box.exec()
+      
 
     elif clicked_widget.objectName() == 'recalc_btn':
         if pktwllt_synching(wlltinf.get_inf(uname, pwd)):
@@ -806,7 +1054,7 @@ def btn_released(self):
             msg_box_26.exec()
             return
         if passphrase == '':
-            passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+            passphrase, ok = get_pass()
         else:
             ok = True
 
@@ -992,8 +1240,9 @@ def btn_released(self):
                 msg_box_12.exec()
             else:
                 if worker_state_active['PASS_CHNG'] == False:
-                    change_pass(old_pass, new_pass)
                     print('attempt to change old_pass password')
+                    change_pass(old_pass, new_pass)
+                    
         else:
             msg_box_12 = QtWidgets.QMessageBox()
             msg_box_12.setText('Make sure your passwords are alphanumeric.')
@@ -1001,7 +1250,6 @@ def btn_released(self):
 
     elif clicked_widget.objectName() == 'address_gen_btn2':
         window.address_line.clear()
-        #window.pubkey_line.clear()
         i = window.stackedWidget.indexOf(window.address_create_page)
         window.stackedWidget.setCurrentIndex(i)
         inf_msg_box = QtWidgets.QMessageBox()
@@ -1062,7 +1310,7 @@ def btn_released(self):
 
             #Get passphrase
             if passphrase == '':
-                passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+                passphrase, ok = get_pass()
             else:
                 ok = True
 
@@ -1135,7 +1383,7 @@ def btn_released(self):
         raw_trans = (str(window.trans_text.toPlainText())).strip()
         
         if passphrase == '':
-            passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+            passphrase, ok = get_pass()
         else:
             ok = True
 
@@ -1246,7 +1494,7 @@ def btn_released(self):
            
             #Get passphrase
             if passphrase == '':
-                passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+                passphrase, ok = get_pass()
             else:
                 ok = True
 
@@ -1306,7 +1554,7 @@ def btn_released(self):
         keys = txt.replace('\n',' ').split()
 
         if passphrase == '':
-            passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+            passphrase, ok = get_pass()
         else:
             ok = True
 
@@ -1320,10 +1568,9 @@ def btn_released(self):
 
     elif clicked_widget.objectName() == 'rtr_prvk_btn':
         address = str(window.comboBox_5.currentText())
-        #if passphrase =='':
-        #    passphrase = str(window.lineEdit_9.text().strip())
+     
         if passphrase == '':
-            passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+            passphrase, ok = get_pass()
         else:
             ok = True
 
@@ -1592,7 +1839,7 @@ def menubar_released(self):
 
     elif clicked_item == 'actionSeed':
         if passphrase == '':
-            passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter your wallet passphrase to access your seed:',QtWidgets.QLineEdit.Password)
+            passphrase, ok = get_pass()
         else:
             ok = True
 
@@ -1840,9 +2087,9 @@ def kill_procs(procs):
             sys.exit()
              
                     
-
+# !!
 def kill_it():
-    global AUTO_RESTART_WALLET, WALLET_COPY
+    global AUTO_RESTART_WALLET, WALLET_COPY, ssh, passphrase_ok
     
     try:
         AUTO_RESTART_WALLET = False
@@ -1850,31 +2097,54 @@ def kill_it():
         if os_sys == 'Linux' or os_sys == 'Darwin':
             subprocess.call(['pkill', 'SIGINT', 'wallet'], shell=False)
             subprocess.call(['pkill', 'SIGINT', 'pktd'], shell=False)
+
         elif os_sys == 'Windows':
             os.system("taskkill /f /im  wallet.exe")
             os.system("taskkill /f /im  pktd.exe")
-        
-        #print("Magic Wallet Status:", MAGIC_WALLET, "Ping", connection.host, ping(connection.host), 'passphrase', passphrase)
-        
-        try:
-            if MAGIC_WALLET and ping(connection.host):
-                print("Backing up Magic Wallet...\n")
-                if passphrase == '':
-                    set_passphrase()
+                
+        try:     
+            if MAGIC_WALLET: 
 
-                WALLET_COPY = True
-                ssh = paramiko.SSHClient()
-                ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
-                ssh.connect(connection.host, connection.port, connection.username, passphrase)
-                res = put_magic_wllt(ssh, passphrase)
-                WALLET_COPY = False    
+                mgk_msg_box5 = QtWidgets.QMessageBox()
+                mgk_msg_box5.setText("Do you wish to back up your wallet to your device?\n")
+                mgk_msg_box5.setWindowTitle("Back Up Wallet")
+                mgk_msg_box5.setStandardButtons(QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No)
+                ret = mgk_msg_box5.exec()
+
+                if ret == QtWidgets.QMessageBox.Yes:    
+                    print("Backing up Magic Wallet...\n")
+                    
+                    if passphrase == '':
+                        passphrase_ok = True
+                        set_passphrase()
+
+                    WALLET_COPY = True
+                    print("Reconnecting to magic wallet...\n")
+                    ssh = ssh_2fa(connection)
+                    res = put_magic_wllt(ssh, passphrase)
+                    WALLET_COPY = False
+
+                    # Delete local wallet?
+                    mgk_msg_box6 = QtWidgets.QMessageBox()
+                    mgk_msg_box6.setText("Do you wish to only store your wallet on your magic wallet device?\n")
+                    mgk_msg_box6.setInformativeText("NOTE: Selecting yes means the only copy of you wallet will be on your device, and not on your desktop.")
+                    mgk_msg_box6.setWindowTitle("Secure Wallet")
+                    mgk_msg_box6.setStandardButtons(QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No)
+                    ret2 = mgk_msg_box6.exec()
+
+                    if ret2 == QtWidgets.QMessageBox.Yes:
+                        os.remove(wallet_file)
+                else:
+                    print("Sleeping another 10 seconds to be sure of graceful shutdown...\n")
+                    time.sleep(10)
+            else:
+                print("Sleeping another 10 seconds to be sure of graceful shutdown...\n")
+                time.sleep(10)    
         except:
-            print("Magic wallet not connected \n")   
-
-        print("Sleeping another 30 seconds to be sure of graceful shutdown...\n")
-        time.sleep(30)
+            print("Unable to connect to magic wallet. \n")     
         
-        return        
+        return  
+
     except:
         print('Failed to clean up.')    
 
@@ -1927,7 +2197,7 @@ def start_wallet_thread():
     threadpool.start(worker)
 
 def pktwllt_dead():
-    print('Wallet died')
+    print('Wallet died\n')
     window.label_103.setPixmap(QPixmap(resource_path('img/red_btn.png')))
     window.label_106.setText('0%')
     if not SHUTDOWN_CYCLE:
@@ -1943,10 +2213,18 @@ def start_pktd_thread():
     worker.signals.result.connect(pktd_dead)
     threadpool.start(worker)
 
+def get_correct_path(relative_path):
+    try:
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
 def inv_pktd():
     global pktd_pid, pktd_cmd_result
-    #print('PATH', path.exists("bin/pktd"))
-    if path.exists("bin/pktd"):
+    p = path.exists(get_correct_path("bin/pktd"))
+    if p:
         print('Invoking PKTD...\n')
         pktd_cmd = "bin/pktd -u "+uname+" -P " +pwd+ " --txindex --addrindex"
         pktd_cmd_result = subprocess.Popen(resource_path(pktd_cmd), shell=True, stdout=subprocess.PIPE)
@@ -1964,14 +2242,15 @@ def pktd_worker(pktd_cmd_result, progress_callback):
     return
 
 def pktd_dead():
-    print('pktd died \n')
+    print('Daemon died \n')
     window.label_100.setPixmap(QPixmap(resource_path('img/red_btn.png'))) 
     window.label_105.setText('0%')
     if not SHUTDOWN_CYCLE:
         restart('pktd')
 
 def inv_pktwllt():
-    if path.exists("bin/wallet"):
+    p = path.exists(get_correct_path("bin/wallet"))
+    if p:
         print('Invoking PKT Wallet...\n')
         global pktwallet_pid, pktwallet_cmd_result
         pktwallet_cmd_result = subprocess.Popen([resource_path('bin/wallet'), '-u', uname, '-P', pwd, '--userpc', '--usespv'],  shell=False, stdout=subprocess.PIPE)
@@ -2004,8 +2283,8 @@ def start_daemon(uname, pwd):
     global pktd_pid, pktwallet_pid
     pktd_pid = 0
     pktwallet_pid = 0
-
-    if wallet_db != '':
+    if wallet_db != '' and path.exists(wallet_db):
+      
         try:
             start_pktd_thread()
             start_wallet_thread()
@@ -2013,6 +2292,7 @@ def start_daemon(uname, pwd):
             print('Failed to invoke daemon.')
             exit_handler()
             sys.exit()
+
     else:
         try:
             global CREATE_NEW_WALLET
@@ -2108,12 +2388,12 @@ def status_light():
         #    wllt_pct = '0.0%'    
 
     #print('Wallet Sync:', w_sync, 'Wallet Percent:',wllt_pct)
-    #print('PKTD Sync:', p_sync, 'PKTD Percent:',  pktd_pct)
+    #print('PKTD Sync:', p_sync, 'PKTD Percent:',  pktd_pct, '\n')
 
     window.label_105.setText(pktd_pct)
     window.label_106.setText(wllt_pct)
-    window.label_103.setPixmap(QPixmap(resource_path('img/grn_btn.png'))) if (not w_sync or wllt_pct=='100.0%') else window.label_103.setPixmap(QPixmap(resource_path('img/ylw_btn.png')))   
-    window.label_100.setPixmap(QPixmap(resource_path('img/grn_btn.png'))) if (not p_sync or pktd_pct=='100.0%') else window.label_100.setPixmap(QPixmap(resource_path('img/ylw_btn.png')))                                  
+    window.label_103.setPixmap(QPixmap(resource_path('img/grn_btn.png'))) if (not w_sync and wllt_pct=='100.0%') else window.label_103.setPixmap(QPixmap(resource_path('img/ylw_btn.png')))   
+    window.label_100.setPixmap(QPixmap(resource_path('img/grn_btn.png'))) if (not p_sync and pktd_pct=='100.0%') else window.label_100.setPixmap(QPixmap(resource_path('img/ylw_btn.png')))                                  
 
 def get_wallet_db():
     wallet_db = ''
@@ -2125,7 +2405,6 @@ def get_wallet_db():
         print('Wallet location:', wallet_db)
     else:
         wallet_db = ''
-    print('wallet_db', wallet_db)        
     return wallet_db    
 
 def clear_send_rcp():
@@ -2212,12 +2491,19 @@ def init_multisig():
         window.multisig_list.setItemWidget(item_line_x, vars()[item_nm])
         pk_list_dict[item_nm] = vars()[item_nm]
 
+def add_mgk_btn():
+    grid.addWidget(mgk_btn, 4, 0)
+    window.frame_3.setMinimumHeight(300)
+    window.frame.setMaximumHeight(250)
+
 def init_side_menu():
-    balance_btn = SideMenuBtn('Balances', 'Balances', 'pixmap_balance_btn', 'View Your Balances')
+    global mgk_btn, grid
+
+    balance_btn = SideMenuBtn('Balances', ' Balances', 'pixmap_balance_btn', 'View Your Balances')
     send_btn = SideMenuBtn('Send', 'Send', 'pixmap_send_btn', 'Send PKT Cash')
     receive_btn = SideMenuBtn('Receive', 'Receive', 'pixmap_receive_btn', 'Receive PKT Cash')
-    transaction_btn = SideMenuBtn('Transactions', 'Transactions', 'pixmap_transaction_btn', 'View Transaction History')
-    mgk_btn = SideMenuBtn('Magic', 'Magic', 'pixmap_balance_btn', 'Connect Magic')
+    transaction_btn = SideMenuBtn('Transactions', '  Transactions', 'pixmap_transaction_btn', 'View Transaction History')
+    mgk_btn = SideMenuBtn('Magic', '   Magic', 'pixmap_magic_btn', 'Connect Magic')
     grid = QtWidgets.QGridLayout(window.frame_3)
     grid.addWidget(balance_btn, 0, 0)
     grid.addWidget(send_btn, 1, 0)
@@ -2225,13 +2511,14 @@ def init_side_menu():
     grid.addWidget(transaction_btn, 3, 0)
     grid.setSpacing(0)
 
+    conn = ping(connection.host)
+    print("***conn", connection.host, conn, path.exists(get_correct_path(".magic.cfg")), "\n")
+    
     try:  
-        if ping(connection.host):
-            grid.addWidget(mgk_btn, 4, 0)
-            window.frame_3.setMinimumHeight(300)
-            window.frame.setMaximumHeight(250)
+        if conn or path.exists(get_correct_path(".magic.cfg")):
+            add_mgk_btn()
     except:
-            print("Magic wallet not connected \n")   
+        print("Magic wallet not connected \n")   
 
     grid.setContentsMargins(0,0,0,0)
     window.frame_3.setLayout(grid)
@@ -2271,11 +2558,13 @@ class MainWindow(QtWidgets.QMainWindow, Ui_MainWindow):
         self.setupUi(self)
 
 # !! --
+
 class connection:
     host = "magicwallet.local"
     port = 22
     username = "magic"
     password = "magicuser"
+    fac_token = ""
 
 def request_frm_bck_up():
     mgk_msg_box4 = QtWidgets.QMessageBox()
@@ -2289,25 +2578,25 @@ def request_frm_bck_up():
     else:
         return False 
 
-
 def get_magic_wllt(ssh, passphrase):
-    global WALLET_COPY, AUTO_RESTART_WALLET
-    #command = "gpg --batch --passphrase passphrase --decrypt "+ WALLET_NAME_E +" | cat " + WALLET_NAME
+    global WALLET_COPY, AUTO_RESTART_WALLET, LOCAL_WALLET_PATH, progress_bar
+
     try:
-        #stdin, stdout, stderr = ssh.exec_command(command)
-        #lines = stdout.readlines()
-        #if lines:
-        scp = SCPClient(ssh.get_transport(), progress=progress)
-        scp.get(REMOTE_WALLET_PATH + "/" + WALLET_NAME, LOCAL_WALLET_PATH)
-        scp.close()
+           
+        LOCAL_WALLET_PATH = wallet_db.strip('wallet.db')
+        progress_bar = Pbar("get")
+        progress_bar.exec()
+
         result = "Successfully retrieved wallet from device."
 
     except Exception as e:
         print("Couldn\'t copy wallet from back up:", e)
         result = "Failed to retrieve wallet from device."
         sys.exit() 
-        
-    ssh.close()
+
+    print("about to close ssh")
+    #ssh.close()
+    print("closed ssh")
     print(result)
 
     #Restart wallet 
@@ -2327,35 +2616,75 @@ def get_magic_wllt(ssh, passphrase):
     WALLET_COPY = False   
     return result 
 
-def progress(filename, size, sent):
-    sys.stdout.write("%s's progress: %.2f%%   \r" % (f"{filename.decode('utf-8')}", float(sent)/float(size)*100) )
 
-def progress4(filename, size, sent, peername):
-    sys.stdout.write("(%s:%s) %s's progress: %.2f%%   \r" % (peername[0], peername[1], filename.decode('utf-8'), float(sent)/float(size)*100) )
+class Pbar(QtWidgets.QDialog):
+  
+    def __init__(self, type, *args, **kwargs):
+        super(Pbar, self).__init__(*args, **kwargs)
+
+        
+        self.type = type
+        self.label = QtWidgets.QLabel(self)
+        self.label.setStyleSheet("font: 14pt Bold 'Gill Sans'")
+        self.label.move(45,20)
+
+        # Progress bar
+        self.prog = QtWidgets.QProgressBar(self)
+        self.prog.setGeometry(20, 50, 300, 50)
+        self.prog.setMaximum(100)
+
+        # Close button
+        self.button = QtWidgets.QPushButton("Close", self)
+        self.button.move(135, 90)
+        self.button.setEnabled(False)
+        self.button.clicked.connect(self.close_it)
+     
+        if self.type =="put":
+            self.setWindowTitle("Backing Up Wallet")
+            self.label.setText("Copying local wallet to magic wallet...")
+        else:
+            self.setWindowTitle("Retrieving Wallet")
+            self.label.setText("Copying magic wallet to local wallet...")    
+        
+        self.show()
+ 
+        self.scp = SCPClient(ssh.get_transport(), progress=self.progress)
+        
+        if self.type =="put":
+            self.scp.put(f"{wallet_db}", REMOTE_WALLET_PATH)
+        else:
+            self.scp.get(REMOTE_WALLET_PATH + "/" + WALLET_NAME, LOCAL_WALLET_PATH)
+        
+    def progress(self, filename, size, sent):
+        count = float(sent)/float(size)*100
+        self.prog.setValue(count)
+        QtWidgets.QApplication.processEvents()
+        sys.stdout.write("%s's progress: %.2f%%   \r" % (f"{filename.decode('utf-8')}", count ))
+      
+        if count==100 and self:
+            print("about to close scp")
+            self.button.setEnabled(True)
+            QtWidgets.QApplication.processEvents()
+
+    def reset(self):
+        self.prog.setValue(0)
+        QtWidgets.QApplication.processEvents()
+
+    def close_it(self):
+        self.close()
+        self.reject()      
 
 def put_magic_wllt(ssh, passphrase):
-    global WALLET_COPY
-    print("LOCAL_WALLET_PATH", LOCAL_WALLET_PATH)
+    global WALLET_COPY, wallet_db, progress_bar
     result = ""
+
     # Check if local wallet exists
-    if path.exists(LOCAL_WALLET_PATH): # replace with get_wallet_db()
-        command = "gpg -c --batch --no-symkey-cache --passphrase --compress-algo none "+ passphrase + " " + REMOTE_WALLET_PATH + "/" + WALLET_NAME
+    if path.exists(wallet_db):
 
         try:
-            scp = SCPClient(ssh.get_transport(), progress=progress)
-            scp.put(f"{get_wallet_db()}", REMOTE_WALLET_PATH)
-            scp.close()
+            progress_bar = Pbar("put")
+            progress_bar.exec()
 
-            # Encrypt it
-            #stdin, stdout, stderr = ssh.exec_command(command)
-            #lines = stdout.readlines()
-            #if lines:            
-            #    result = "Successfully copied and encrypted wallet."
-            
-            # Delete unencrypted wallet
-            #del_command = "rm -rf " + WALLET_NAME
-            #stdin, stdout, stderr = ssh.exec_command(del_command)
-       
         except Exception as e:
             print("Couldn\'t connect, connection error:", e)
             result = "Failed to copy wallet to device"
@@ -2363,10 +2692,13 @@ def put_magic_wllt(ssh, passphrase):
         result = "Couldn\'t find local wallet.db file, exiting..."        
 
     WALLET_COPY = False     
-    ssh.close()
+    #ssh.close()
     print(result)
     return result
+    
+    return
 
+# Does wallet.db exist on magic wallet? If so it's a first connect
 def first_connect(ssh):
     cmd = "ls "+ REMOTE_WALLET_PATH +"/"+ WALLET_NAME +">> /dev/null 2>&1 && echo yes || echo no | tr -d '\n'"
     stdin, stdout, stderr = ssh.exec_command(cmd)
@@ -2382,110 +2714,342 @@ def first_connect(ssh):
                 sys.exit()
     else:
         line = lines[0]
+
         if line == 'yes':
             print('Wallet found on magic stick.\n')
-            print('Lines:',lines)
+            print('Lines:',lines) 
             return False
+
         elif line == 'no':
             print('No wallet found on magic stick.\n')
-            return True
+            # Check if a magic_cfg exists
+            p = path.exists(get_correct_path(".magic.cfg"))
+           
+            if p:
+                return False
+            else:   
+                return True
 
+# Get the passphrase from the user.
 def set_passphrase():
     global passphrase
-    passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:', QtWidgets.QLineEdit.Password)
+    passphrase, ok = get_pass()
     passphrase = passphrase.strip()
     return passphrase
 
+
+# Change password on magic wallet
+def change_mgk_passphrase(passphrase, ssh):
+    #command = "echo 'magic:"+passphrase+"' | sudo chpasswd "
+    command = "python /home/magic/.chg_pwd.py " + passphrase
+    stdin, stdout, stderr = ssh.exec_command(command)
+    success = False
+    lines = str((stdout.readlines())[0]).rstrip()
+
+    if lines=="None":
+        success = True
+    else:
+        print("Error changing password\n")
+        success = False
+    
+    return success
+
+# Setup 2fa on magic wallet
+def setup_2fa(ssh):
+    print("In setup_2fa...\n")
+    success = False
+    cmd_1 = "python /home/magic/.auth.py"
+    stdin, stdout, stderr = ssh.exec_command(cmd_1)
+    remote_res = stdout.readlines()[0] #.split('\n')
+    print("Remote Res in 2fa:", remote_res)
+    arr = (remote_res.split(",")[0]).split("|") 
+
+    if len(arr) > 0: #and not stderr:
+        success = True
+        secret = arr[0].replace("('","")
+        emer_scratch_codes = arr[1].split(";")
+        ver_code = arr[2].replace("'", "")
+        print("secret:", secret, "\nemer_scratch_codes:", emer_scratch_codes, "\nver_code:", ver_code, "\n")        
+        
+        # display QR for authy, and display emergency scratch codes.
+        qr_text = 'otpauth://hotp/magic@magicwallet?secret=ELIUHFTUQICYEQBDOBG25QMWNE&issuer=magicwallet'
+        
+        # Write QR
+        qr_c = qrcode.QRCode(
+            version=4,
+            error_correction=qrcode.constants.ERROR_CORRECT_L,
+            box_size=10,
+            border=4
+        )
+
+        qr_c.add_data(qr_text)
+        qr_c.make(fit=True)
+
+        img = qr_c.make_image(fill_color="black", back_color="white")
+
+        fn = "2fa.png"
+        img.save(resource_path("QRCodes/"+fn))
+
+        # Show QR
+        msg_box_QR = QtWidgets.QMessageBox()
+        msg_box_QR.setIconPixmap(QPixmap(resource_path("QRCodes/"+fn)))
+        msg_box_QR.setInformativeText('Scan QR code here.')
+        ret = msg_box_QR.exec()
+
+        # Delete
+        os.remove(resource_path("QRCodes/"+fn)) 
+
+        # Activate 2fa
+        cmd_2 = "/home/magic/.activ8.sh"
+        stdin, stdout, stderr = ssh.exec_command(cmd_2)
+        remote_res = stdout.readlines()[0]
+        if "Activating 2FA" in remote_res:
+            print("Activated\n")
+        print("***stdin, stdout, stderr", stdin, stdout, stderr, remote_res)  
+
+    return success
+
+def touch_config():
+    # Touch local config
+    print("Touching config file.\n")
+    cmd = "touch .magic.cfg"
+    result, err = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+    result = result.decode('utf-8')
+    err = err.decode('utf-8')
+
+    if err:
+        print(err,"\n")
+
+def rem_config():
+    print("Revoking config file.\n")
+    cmd = "rm -rf ./.magic.cfg"
+    result, err = (subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
+    result = result.decode('utf-8')
+    err = err.decode('utf-8')
+
+    if err:
+        print(err,"\n")
+
 def start_magic_thread(ssh):
     global passphrase, WALLET_COPY
-    fc = first_connect(ssh)
-    if fc:
-         print("First time connecting. Setting new PWD and Backing up local wallet to magic stick...")
-         
-         #set new passphrase
-         passphrase = set_passphrase(ssh)
-         change_passphrase(passphrase, ssh)
-
     WALLET_COPY = True
-    #worker = Worker(magic_link, ssh, fc, passphrase)
-    #worker.signals.result.connect(magic_complete)
-    #threadpool.start(worker)
     success = magic_link(ssh, fc, passphrase)
     magic_complete(success)
+
+# Compare file epoch timestamps
+def compare_ts(file_1, file_2):
+    if file_1 > file_2:
+        return True 
+    else:
+        return False      
+
 
 def magic_link(ssh, fc, passphrase): #, progress_callback):
     success = False
     res = ""
+
     if MAGIC_WALLET and CONNECTED and ssh:
 
-        # On first connection (If not shutdown_cycle)
+        # If not shutdown_cycle
         if not SHUTDOWN_CYCLE:
-            if fc:
+
+            # On a first connect we just copy the local wallet to remote storage.
+            if fc or path.exists(get_correct_path(".magic.cfg")):
                 res = put_magic_wllt(ssh, passphrase)
-            else:
-                # Copy remote wallet to local, Assumes remote wallet is more up to date.
-                print("Retrieving wallet from magic stick...\n")
+            elif wallet_db == '':
+                # no local wallet present, copy over the remote wallet
                 res = get_magic_wllt(ssh, passphrase)
+            else:
+                # Let's check the timestamps of both (local/remote) and see which is newer, if remote is newer copy that 
+                try:
+                    cmd_1 = "date -r "+REMOTE_WALLET_PATH +"/"+ WALLET_NAME+" +%s"
+                    stdin, stdout, stderr = ssh.exec_command(cmd_1)
+                    remote_dt = str(stdout.readlines()[0]).split('\n')[0]
+
+                    if remote_dt:
+                        cmd_2 = "date -r '"+wallet_db+"' +%s"
+                        local_dt, err = (subprocess.Popen(cmd_2, shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate())
+                        local_dt = local_dt.decode('utf-8')
+                        err = err.decode('utf-8')
+
+                        if not err:
+                            
+                            if int(remote_dt) > int(local_dt): 
+                                print("Retrieving wallet from magic stick...\n")
+                                res = get_magic_wllt(ssh, passphrase)
+                            else:
+                                print("Remote wallet not more recent than local wallet...\n")    
+                        else:
+                            print("No local wallet available.", err)
+                            res = get_magic_wllt(ssh, passphrase)
+
+
+                except Exception as exc:
+                    res = "Failed"
+                    print("Failed to retrieve wallet. Either a bad connection or an existing session is blocking connection.", exc)
+                    
         else: 
             # Copy local wallet to remote
             res = put_magic_wllt(ssh, passphrase)
 
         if "Successfully" in res:
             success = True
-
+        
+        print("In magic link, RES:", res)
         return success            
 
+# Sync is compelte
 def magic_complete(success):
     global WALLET_COPY, AUTO_RESTART_WALLET
+    print("In magic_complete, \"success\"", success)
     if success:
         print("Magic wallet sync process complete.")
     else:
         print("Magic wallet sync process failed.")
     AUTO_RESTART_WALLET = True    
     WALLET_COPY = False
-    print("wallet copy", WALLET_COPY)
-    
+    print("In magic wallet, \"WALLET_COPY:\"", WALLET_COPY)
 
+# Connect to magic wallet once 2fa is setup    
+def ssh_2fa(conn):
+    global CONNECTED, passphrase, ssh
+
+    password = passphrase if not passphrase =='' else conn.password
+    fac_token = conn.fac_token
+    hostname = conn.host
+    port = conn.port
+    username = conn.username    
+    prmpt_str =""
+
+    # Handler for server questions
+    def answer_handler(title, instructions, prompt_list):
+        answers = {
+          'password': password,
+          'verification_code': fac_token
+        }
+
+        resp = []
+        for prmpt in prompt_list:
+            prmpt_str = prmpt[0].lower().strip().replace(' ', '_').replace(':', '')
+            print('prmpt_str:', prmpt_str, answers[prmpt_str])
+            resp.append(answers[prmpt_str])
+        return resp
+
+    trans = paramiko.Transport((hostname, port))
+    trans.use_compression()
+    trans.set_keepalive(5)
+    trans.connect()
+
+    try:
+        trans.auth_interactive_dumb(username, answer_handler)
+        ssh = paramiko.SSHClient()
+        ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
+        ssh._transport = trans 
+        CONNECTED = True  
+        return ssh
+
+    except Exception as exc:
+        CONNECTED = False
+        print('Exception:', exc)
+        trans.set_keepalive(0)
+
+        # Default failed
+        if "Authentication failed" in str(exc):
+            
+            # Assume not first connect and collect all data required for 2fa
+            if passphrase == "" or passphrase == "magicuser": 
+                passphrase, ok = get_pass() 
+            else:
+                ok = True      
+
+            if ok:
+                passphrase = passphrase.strip()
+                conn.password = passphrase
+                
+                if SHUTDOWN_CYCLE:
+                    token, ok = QtWidgets.QInputDialog.getText(window, '2FA', 'Backing up your wallet...\n\nEnter your 2-factor authentication code:',QtWidgets.QLineEdit.Password)
+                    
+                else:
+                    token, ok = QtWidgets.QInputDialog.getText(window, '2FA', 'Enter your 2-factor authentication code:',QtWidgets.QLineEdit.Password)
+                
+                if ok:
+                    token = token.strip()
+                    conn.fac_token = token
+                    return ssh_2fa(conn)
+                else:
+                    ssh = "failed"
+                    return ssh   
+            
+            else:
+                ssh = "failed"
+                return ssh
+
+        # Authentication code failed.    
+        elif "Bad authentication type" in str(exc):
+            print("In bad authentication type...\n")
+            token, ok = QtWidgets.QInputDialog.getText(window, '2FA', 'Enter your 2-factor authentication code:',QtWidgets.QLineEdit.Password)
+                
+            if ok:
+                print("OK is true")
+                token = token.strip()
+                conn.fac_token = token
+                return ssh_2fa(conn)
+            else:
+                print("Canceled back up...\n")
+                ssh = "failed"
+                return ssh
+
+        else:
+            print("Already connected to device, only one session allowed.\n")
+            ssh = "failed"
+            return ssh
+
+# Connects to magic wallet in the default case, ie. no 2fa setup yet
 def connect_magic_wllt(conn):
     global CONNECTED, passphrase
     
+    print("In connect_magic_wllt... \n")
+    if passphrase:
+        conn.password = passphrase
+
     try:
         ssh = paramiko.SSHClient()
         ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
         ssh.connect(conn.host, conn.port, conn.username, conn.password)
-
-        print("Connected successfully.")
+        print("Connected successfully.\n")
         CONNECTED = True
    
     except Exception as e:
-        print("Couldn\'t connect with default password.", e,"\n")
+        if conn.password == "magicuser":
+            print("Couldn\'t connect with default password.", e,"\n")
+        else: 
+            print("Couldn\'t connect with password:", conn.password, e, "\n")
+
         CONNECTED = False
-        passphrase, ok = QtWidgets.QInputDialog.getText(window, 'Wallet Passphrase', 'Enter wallet passphrase:',QtWidgets.QLineEdit.Password)
+        passphrase, ok = get_pass()
 
         if ok:
             passphrase = passphrase.strip()
             conn.password = passphrase
             ssh = connect_magic_wllt(conn)
-        
         else:
             ssh = "failed"
 
     return ssh        
 
+# Is magic wallet attached?
 def ping(host):
     res = False
     ping_param = "-n 1" if platform.system() == "Windows" else "-c 1"
     result = os.popen("ping " + ping_param + " " + host).read()
+    print("result", result)
     if "ttl=" in str(result):
         res = True
     return res
 
 def detect_magic_wllt(QtWidgets):
-    global passphrase, MAGIC_WALLET
-
-    #Retrieve your wallet if necessary
-    LOCAL_WALLET_PATH = wallet_db
-
+    global passphrase, MAGIC_WALLET, ssh, fc
+    success = False
     # See if device attached
     conn = connection()
 
@@ -2493,33 +3057,106 @@ def detect_magic_wllt(QtWidgets):
         result = ping(conn.host)
     except:
         print("Magic wallet not connected...")
+
+    mgk_msg_box = QtWidgets.QMessageBox()
+
+    # If magic wallet is attached
     if result:
         MAGIC_WALLET = True
-        # If device attached then connect
-        ssh = connect_magic_wllt(conn)
-
-        if not ssh == "failed":
-            mgk_msg_box = QtWidgets.QMessageBox()
-            mgk_msg_box.setText("Magic Wallet connected. Would you like to sync it?")
-            mgk_msg_box.setWindowTitle("Connect Magic Wallet")
+        p = path.exists(get_correct_path(".magic.cfg")) # Look for magic.cfg
+        
+        # If the config file doesn't exist we can't say for sure that this wallet has been setup yet
+        if not p:
+            print("Config file not present.\n")
+            
+            mgk_msg_box.setText("Have you already set up your magic wallet?")
+            mgk_msg_box.setWindowTitle("Setup")
             mgk_msg_box.setStandardButtons(QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No)
             mgk_msg_box.setDefaultButton(QtWidgets.QMessageBox.Yes)
-            ret = mgk_msg_box.exec()
+            ret = mgk_msg_box.exec()  
 
-            if ret == QtWidgets.QMessageBox.Yes:
-                start_magic_thread(ssh)
+            if ret == QtWidgets.QMessageBox.Yes: # Config file is missing
+                # We're fully  configured
+                touch_config()
+                success = True
+                
+            else:
+                # Not configured,  wallet isn't setup
+                ssh = connect_magic_wllt(conn) #Connect simplistically with the default password
+                print("In detect magic wallet, ssh:", ssh)
 
+                if not ssh == "failed": # we're connected
+                    
+                    fc = first_connect(ssh) # Check if first time connecting
+                    
+                    # On first connect set the magic passphrase, and local passphrase to be the same thing
+                    if fc:
+                        print("First time connecting. Setting new PWD and Backing up local wallet to magic stick...\n")
+                        mgk_msg_box.setText("First time connecting.")
+                        mgk_msg_box.setInformativeText("Setting new PWD and Backing up local wallet to magic stick. Click \"OK\" to continue.")
+                        mgk_msg_box.setWindowTitle("First Connect")  
+                        touch_config()
+
+                        #set new passphrase
+                        if not passphrase:
+                            passphrase = set_passphrase()
+
+                        res = change_pass(passphrase, passphrase) # Changing both passwords in one shot
+                        print("Change password result:", res, "\n")
+
+                        #set up 2fa
+                        if res:
+                            print("Setting up 2FA...\n")
+                            res2 = setup_2fa(ssh)
+                            
+                            if res2: 
+                                   
+                                # Logout, so we can test the 2fa login    
+                                ssh.close()  
+ 
+                                success = True
+                            
+                            else:
+                                rem_config()            
+                        else: # it failed, revoke config
+                            rem_config()
+
+                else: # Connection failed, maybe wallet is partially set up. Lets ask user for wallet passphrase
+                    conn_retry_msg()   
+        else:
+            # Config exists
+            touch_config()
+            success = True
+
+        # Assume we are configured now so log back in
+        if success:
+            ssh = ssh_2fa(conn)
+        
+            # If the login succeeded
+            if not ssh == "failed":
+                fc = first_connect(ssh)
+                #mgk_msg_box = QtWidgets.QMessageBox()
+                mgk_msg_box.setText("Magic Wallet connected. Would you like to sync it?")
+                mgk_msg_box.setWindowTitle("Connect Magic Wallet")
+                mgk_msg_box.setStandardButtons(QtWidgets.QMessageBox.Yes|QtWidgets.QMessageBox.No)
+                mgk_msg_box.setDefaultButton(QtWidgets.QMessageBox.Yes)
+                ret = mgk_msg_box.exec()
+
+                # Start sync in separate thread
+                if ret == QtWidgets.QMessageBox.Yes:
+                    start_magic_thread(ssh)
+
+    # If wallet isn't attached
     elif not result and MAGIC_WALLET:
-        mgk_msg_box = QtWidgets.QMessageBox()
-        mgk_msg_box.setText("Magic Wallet not connected.")
-        mgk_msg_box.setWindowTitle("Not Connected")            
+        #mgk_msg_box = QtWidgets.QMessageBox()
+        mgk_msg_box.setText("Magic Wallet not attached.")
+        mgk_msg_box.setWindowTitle("Not Attached")            
 
-def change_passphrase(passphrase, ssh):
-    command = "echo \'magic:"+passphrase+"\' | sudo chpasswd "
-    stdin, stdout, stderr = ssh.exec_command(command)
-    lines = stdout.readlines()
-    if lines:
-        print('Lines:',lines)
+def conn_retry_msg():
+    mgk_msg_box2 = QtWidgets.QMessageBox()
+    mgk_msg_box2.setText("Wallet failed to connect. Let\'s try that again.")
+    mgk_msg_box2.setWindowTitle("Not Connected")  
+        
 # !! --
 
 # ----- MAIN -----
@@ -2605,5 +3242,5 @@ if __name__ == "__main__":
     menubar_listeners()
     window.show()
     check_status()
-    detect_magic_wllt(QtWidgets)
+    #detect_magic_wllt(QtWidgets)
     app.exec()

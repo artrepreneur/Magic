@@ -15,6 +15,7 @@ def resource_path(relative_path):
         return os.path.join(sys._MEIPASS, relative_path)
     return os.path.join(os.path.abspath('.'), relative_path)
     
+
 def change_pass(uname, pwd, progress_callback):
     global err
 
@@ -30,7 +31,25 @@ def change_pass(uname, pwd, progress_callback):
     except subprocess.CalledProcessError as e:
         print('Failed to retrieve public key.', e.output)
 
-def change(u, p, op, np, win, state, pool):
+def change_pass_s(uname, pwd):
+    global err
+
+    try:
+        cmd = "bin/pktctl -u "+  uname +" -P "+ pwd +" --wallet walletpassphrasechange " + old_pwd + " " + new_pwd
+        result, err = subprocess.Popen(resource_path(cmd), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE).communicate()
+        result = result.decode('utf-8')
+        err = err.decode('utf-8')
+        if err:
+            print('Error:', err)
+
+        print_result(result)
+
+    except subprocess.CalledProcessError as e:
+        print('Failed to retrieve public key.', e.output)
+    
+    return        
+
+def change(u, p, op, np, win, state, pool, sync):
     global window, uname, pwd, worker_state_active, old_pwd, new_pwd
     uname  = u
     pwd = p
@@ -39,15 +58,21 @@ def change(u, p, op, np, win, state, pool):
     old_pwd = op
     new_pwd = np
     window = win
-
+    print("sync", sync)
     # Pass the function to execute
     if not worker_state_active['PASS_CHNG']:
-        worker_state_active['PASS_CHNG'] = True
-        worker = rpcworker.Worker(change_pass, uname, pwd) # Any other args, kwargs are passed to the run function
-        worker.signals.result.connect(print_result)
-        worker.signals.finished.connect(thread_complete)
-        worker.signals.progress.connect(progress_fn)
-        threadpool.start(worker)
+       
+        if not sync:
+            worker_state_active['PASS_CHNG'] = True
+            worker = rpcworker.Worker(change_pass, uname, pwd) # Any other args, kwargs are passed to the run function
+            worker.signals.result.connect(print_result)
+            worker.signals.finished.connect(thread_complete)
+            worker.signals.progress.connect(progress_fn)
+            threadpool.start(worker)
+        else:
+            change_pass_s(uname, pwd)
+
+
 
 def print_result(result):
     # Relock wallet.
@@ -58,9 +83,13 @@ def print_result(result):
         msg_box_13 = QtWidgets.QMessageBox()
         msg_box_13.setText(_translate("MainWindow",'Your password has been changed.'))
         msg_box_13.exec()
-    else:
+    elif "Incorrect passphrase" in err:
         msg_box_13 = QtWidgets.QMessageBox()
         msg_box_13.setText(_translate("MainWindow",'Your password has not been changed. Please make sure your old password was entered correctly.'))
         msg_box_13.exec()
+    else:
+        msg_box_13 = QtWidgets.QMessageBox()
+        msg_box_13.setText(_translate("MainWindow",'Your password has not been changed.'))
+        msg_box_13.exec()    
 
     worker_state_active['PASS_CHNG'] = False

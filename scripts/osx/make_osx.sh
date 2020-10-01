@@ -11,13 +11,13 @@ PYTHON_VERSION=3.7.6
 cd "$PKT_OSX_PATH/../.." || fail "failed cd"
 ROOT_FOLDER="$(pwd)"
 BUILDDIR=${ROOT_FOLDER}/build
-
 command -v brew > /dev/null 2>&1 || fail "Need https://brew.sh/"
 command -v xcodebuild > /dev/null 2>&1 || fail "Please install Xcode and xcode command line tools to continue"
 command -v git >/dev/null 2>&1 || fail "Need git"
 
 rm -rf "$ROOT_FOLDER/dist"
 rm -rf "$BUILDDIR"
+chmod 755 "$ROOT_FOLDER/bin/"* || fail "Failed Chmod"
 mkdir -p "$BUILDDIR/deps"
 VERSION=$(git describe --tags --dirty --always)
 
